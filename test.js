@@ -470,7 +470,7 @@ test('typestr function', function (t) {
     [ 0,            0,         false,      'src_end' ],
     [ TOK.ARR_END,  0,         undefined,  'array_end' ],
   ], function (tok, ecode, precise) {
-    return jtokenizer.tok_typestr(tok, ecode, precise=precise)
+    return jtokenizer._tok_typestr(tok, ecode, precise=precise)
   })
 })
 

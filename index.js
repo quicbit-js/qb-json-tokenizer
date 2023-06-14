@@ -200,5 +200,5 @@ module.exports = {
   ECODE: ECODE,
   create: (opt) => new JsonTokenizer(opt),
   arr_equal: jnext.arr_equal,
-  tok_typestr: JsonTokenizer.tok_typestr,
+  _tok_typestr: JsonTokenizer.tok_typestr,  // exposed for testing
 }
