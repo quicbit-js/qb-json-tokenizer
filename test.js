@@ -17,6 +17,7 @@
 var test = require('test-kit').tape()
 var utf8 = require('qb-utf8-ez')
 var jtokenizer = require('.')
+let TOK = jtokenizer.TOK
 
 function src_tokens (opt) {
   let tokenizer = jtokenizer.create()
@@ -33,9 +34,9 @@ function token_strings (tokenizer) {
   do {
     var t = tokenizer.next({err: function () {}})     // errors show up in token details, so don't throw errors
     t === tokenizer.tok || err('bad return token: ' + t)
-    toks.push(tokenizer.ps.tokstr(tokenizer.tok === 0))    // more details for end token
+    toks.push(tokenizer.tokstr(tokenizer.tok === 0))    // more details for end token
   } while (tokenizer.ps.tok)
-  tokenizer.ps.tokstr(true) === toks[toks.length-1] || err('inconsistent last token: ' + toks[toks.length-1])
+  tokenizer.tokstr(true) === toks[toks.length-1] || err('inconsistent last token: ' + toks[toks.length-1])
   return toks.join(',')
 }
 
@@ -318,6 +319,22 @@ test('bad value', function (t) {
   ], function (src) { return src_tokens({src: utf8.buffer(src)}) })
 })
 
+test('valbuf', function (t) {
+  t.table_assert([
+    [ 'src',        'exp' ],
+    [ '{"a":7}',    [ '{', '7', '}', null ] ],
+    [ '{"a":[3,"zzz",1]}',    [ '{', '[', '3', '"zzz"', '1', ']', '}', null ] ],
+  ], function (src) {
+    let ret = []
+    let tokenizer = jtokenizer.create().nextsrc(utf8.buffer(src))
+    while (tokenizer.next()) {
+      ret.push(tokenizer.valbuf && tokenizer.valbuf.toString())
+    }
+    ret.push(tokenizer.valbuf)  // should be null
+    return ret
+  })
+})
+
 test('unexpected value', function (t) {
   t.table_assert([
     [ 'src',              'exp' ],
@@ -357,18 +374,7 @@ test('next() errors', function (t) {
   }, {assert: 'throws'})
 })
 
-
-test.skip('src not finished', function (t) {
-  var s1 = utf8.buffer('[1,2,3,4,')
-  var s2 = utf8.buffer('5]')
-
-  var ps = {src: s1, next_src: s2 }
-  var exp = '[@0,d1@1,d1@3,d1@5,d1@7,d1@0,]@1,!@2:A_AV'
-  t.same(src_tokens(ps), exp, t.desc('finished', [s1, s2], exp))
-  t.end()
-})
-
-test.skip('soff and vcount', function (t) {
+test('soff and vcount', function (t) {
   t.table_assert([
     [ 's1',           's2',               's3',            'exp' ],
     [ '[1, ',         '2,3,',             '4]',           { soffs: [ 0, 4, 8 ], vcounts: [ 1, 3, 5 ] } ],
@@ -376,53 +382,108 @@ test.skip('soff and vcount', function (t) {
   ], function (s1, s2, s3) {
     var sources = [s1, s2, s3]
     var ret = {soffs: [], vcounts: []}
-    var ps = {}
+    var tokenizer = jtokenizer.create()
     while (sources.length) {
-      ps.next_src = utf8.buffer(sources.shift())
-      while (next(ps)) {}
-      next.checke(ps)
-      ret.soffs.push(ps.soff)
-      ret.vcounts.push(ps.vcount)
+      tokenizer.nextsrc(utf8.buffer(sources.shift()))
+      while (tokenizer.next()) {}
+      tokenizer.checke()
+      ret.soffs.push(tokenizer.ps.soff)
+      ret.vcounts.push(tokenizer.ps.vcount)
     }
     return ret
   })
 })
 
-test.skip('sticky ecode', function (t) {
-  t.table_assert([
-    [ 'src',     'exp' ],
-    [ '',        ', !@0:A_BF, !@0:A_BF' ],
-    [ '1',       ', !1@0:D:A_BF, !1@0:D:A_BF' ],
-    [ '1,',      'd1@0:A_AV, !@2:A_BV, !@2:A_BV' ],
-    [ '1,2',     'd1@0:A_AV, !1@2:D:A_BV, !1@2:D:A_BV' ],
-    [ '["',      '[@0:A_BF:[, !1@1:T:A_BF:[, !1@1:T:A_BF:[' ],
-    [ '{"',      '{@0:O_BF:{, k1@1:!@2:T:O_BF:{, k1@1:!@2:T:O_BF:{' ],
-    [ '["a',     '[@0:A_BF:[, !2@1:T:A_BF:[, !2@1:T:A_BF:[' ],
-    [ '{"a',     '{@0:O_BF:{, k2@1:!@3:T:O_BF:{, k2@1:!@3:T:O_BF:{' ],
-    [ '{"a"',    '{@0:O_BF:{, k3@1:!@4:K:O_AK:{, k3@1:!@4:K:O_AK:{' ],
-    [ '{"a":',   '{@0:O_BF:{, k3@1:!@5:K:O_BV:{, k3@1:!@5:K:O_BV:{' ],
-    [ '{"a":"',  '{@0:O_BF:{, k3@1:!1@5:T:O_BV:{, k3@1:!1@5:T:O_BV:{' ],
-    [ '{"a":"b', '{@0:O_BF:{, k3@1:!2@5:T:O_BV:{, k3@1:!2@5:T:O_BV:{' ],
-    [ '{"a":n',  '{@0:O_BF:{, k3@1:!1@5:T:O_BV:{, k3@1:!1@5:T:O_BV:{' ],
-    [ '{"a":no', '{@0:O_BF:{, k3@1:!2@5:B:O_BV:{, k3@1:!2@5:B:O_BV:{' ],
-    [ '{t',      '{@0:O_BF:{, !1@1:U:O_BF:{, !1@1:U:O_BF:{' ],
-    [ '{7',      '{@0:O_BF:{, !1@1:U:O_BF:{, !1@1:U:O_BF:{' ],
-    [ '[tx',     '[@0:A_BF:[, !2@1:B:A_BF:[, !2@1:B:A_BF:[' ],
-    [ '{tx',     '{@0:O_BF:{, !1@1:U:O_BF:{, !1@1:U:O_BF:{' ],
-    ], function (src) {
-    var ps = {src: utf8.buffer(src)}
-    var last
-    var toks = []
-    while (next(ps, {err: function () {}})) {
-      last = next.tokstr(ps, 1)
+test('statstr', function (t) {
+  // [{"a":7},["z",5]]
+  let src = '"a"'
+  let tokenizer = jtokenizer.create().nextsrc(utf8.buffer(src))
+  while (tokenizer.next()) {
+  }
+  let stats = tokenizer.statstr().split('\n')
+  t.same(stats[1], '   src_end: 1')
+  t.same(stats[2], '   string: 1')
+  t.end()
+})
+
+test('leaves', function (t) {
+  const tests = [
+    [ '{"a":[1,2]}', [ 'd1@6', 'd1@8' ] ],
+    [ '[{"a":7},["z",5]]', [ 'k3@2:d1@6', 's3@10', 'd1@14' ] ],
+  ]
+
+  t.plan(tests.length)
+
+  function makecb (t, src, exp) {
+    let toks = []
+    return (tokenizer) => {
+      if (tokenizer == null) { 
+        t.same(toks, exp)
+      } else {
+        toks.push(tokenizer.tokstr())
+      }
     }
-    toks.push(last)
-    toks.push(next.tokstr(ps, 1))
-    next(ps)
-    toks.push(next.tokstr(ps, 1))
-    toks[toks.length-1] === toks[toks.length-2] || err('not sticky: ' + toks.join(',   '))
-    return toks.join(', ')
+  }
+
+  for (let [src, exp] of tests) {
+    jtokenizer.create().leaves(utf8.buffer(src), makecb(t, src, exp))
+  }
+
+})
+
+test('typestr', function (t) {
+  t.table_assert([
+    [ 'src',  'exp' ],
+    [ '{"a":[1,2]}', [ 'object', 'array', 'number', 'number', 'array_end', 'object_end' ] ],
+  ], function (src) {
+    let tokenizer = jtokenizer.create().nextsrc(utf8.buffer(src))
+    let ret = []
+    while (tokenizer.next()) {
+      ret.push(tokenizer.typestr())
+    }
+    return ret
   })
+})
+
+test('typestr function', function (t) {
+  t.table_assert([
+    [ 'tok',        'ecode',  'precise',   'exp' ],
+    [ TOK.ARR,      0,         true,       'array' ],
+    [ TOK.ARR_END,  0,         true,       'array_end' ],
+    [ TOK.OBJ,      0,         true,       'object' ],
+    [ TOK.OBJ_END,  0,         true,       'object_end' ],
+    [ TOK.STR,      0,         true,       'string' ],
+    [ TOK.DEC,      0,         true,       'number' ],
+    [ TOK.FAL,      0,         true,       'false' ],
+    [ TOK.TRU,      0,         true,       'true' ],
+    [ TOK.NUL,      0,         true,       'null' ],
+    [ 0,            0,         false,      'src_end' ],
+    [ TOK.ARR,      0,         false,      'array' ],
+    [ TOK.ARR_END,  0,         false,      'array' ],
+    [ TOK.OBJ,      0,         false,      'object' ],
+    [ TOK.OBJ_END,  0,         false,      'object' ],
+    [ TOK.STR,      0,         false,      'string' ],
+    [ TOK.DEC,      0,         false,      'number' ],
+    [ TOK.FAL,      0,         false,      'false' ],
+    [ TOK.TRU,      0,         false,      'true' ],
+    [ TOK.NUL,      0,         false,      'null' ],
+    [ 0,            0,         false,      'src_end' ],
+    [ TOK.ARR_END,  0,         undefined,  'array_end' ],
+  ], function (tok, ecode, precise) {
+    return jtokenizer.tok_typestr(tok, ecode, precise=precise)
+  })
+})
+
+test('errors', function (t) {
+  let tokenizer = jtokenizer.create()
+  try {
+    tokenizer.next()
+  } catch (e) {
+    t.equals(e.message, 'Before calling next(), JsonTokenizer expects nextsrc() to be called')
+  }
+  t.end()
+  // t.plan(1)
+  // t.throws(function () { return jtokenizer.next()}, undefined, 'Before calling next(), JsonTokenizer expects nextsrc() to be called')
 })
 
 function parse_split (sources) {

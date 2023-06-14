@@ -78,7 +78,7 @@ class JsonTokenizer {
     this.nchunks++
     if (this.nchunks > 1) {
       this.ps.next_src = src
-      jalign(this.ps, { new_buf: (len) => Buffer.from(new Uint8Array(len)) })
+      jalign(this.ps)
     } else {
       this.first_chunk_time = Date.now()
       this.ps = jnext.new_ps(src, opt || this.opt)
@@ -88,9 +88,10 @@ class JsonTokenizer {
 
   next (opt) {
     if (this.nchunks === 0) {
-      throw Error('Before calling next(), JParser expects nextsrc() to be called')
+      throw Error('Before calling next(), JsonTokenizer expects nextsrc() to be called')
     }
     let ps = this.ps
+    this.counts.set(ps.tok, (this.counts.get(ps.tok) || 0) + 1)
     if (ps.tok !== 0) {
       this.prev_tok = ps.tok
     }
@@ -134,8 +135,12 @@ class JsonTokenizer {
     return jnext.checke(this.ps)
   }
 
-  typestr (precise = true) {
+  typestr (precise=true) {
     return JsonTokenizer.tok_typestr(this.ps.tok, this.ps.ecode, precise)
+  }
+
+  tokstr(detail) {
+    return this.ps.tokstr(detail)
   }
 
   update_path () {
@@ -161,10 +166,10 @@ class JsonTokenizer {
     let bytesmb = (this.nbytes / (1024 * 1024)).toFixed(2)
     let parse_time_ms = this.last_tok_time - this.first_chunk_time
     ret.push(`${this.nchunks} chunks totaling ${bytesmb} mb, parsed in ${parse_time_ms / 1000} seconds. Token Counts:`)
-    const NAME2TOK = Array.from(this.counts.keys()).reduce((obj, tok) => { obj[TOK_NAMES[tok]] = tok; return obj }, {})
-    let names = Object.keys(NAME2TOK).sort()
+    const name2tok = Array.from(this.counts.keys()).reduce((obj, tok) => { obj[TOK_NAMES[tok]] = tok; return obj }, {})
+    let names = Object.keys(name2tok).sort()
     for (let n of names) {
-      ret.push(`   ${n}: ${this.counts.get(NAME2TOK[n]) || 0}`)
+      ret.push(`   ${n}: ${this.counts.get(name2tok[n])}`)
     }
     return ret.join('\n')
   }
@@ -195,4 +200,5 @@ module.exports = {
   ECODE: ECODE,
   create: (opt) => new JsonTokenizer(opt),
   arr_equal: jnext.arr_equal,
+  tok_typestr: JsonTokenizer.tok_typestr,
 }
